@@ -8,6 +8,7 @@ Integration tests are skipped when CloudHop is not running.
 from __future__ import annotations
 
 import json
+import os
 import urllib.error
 from http.cookiejar import Cookie
 from unittest.mock import MagicMock, patch
@@ -300,41 +301,59 @@ class TestBrowseRemote:
     """Tests for browse_remote tool."""
 
     def test_posts_remote_and_path(self):
-        """browse_remote sends correct remote and path."""
+        """browse_remote constructs full remote:path and sends as path."""
         import cloudhop_mcp.server as srv
 
-        browse_data = {"entries": [{"name": "file.txt", "size": 100}]}
+        browse_data = {"ok": True, "folders": [{"name": "file.txt"}]}
         with patch.object(srv, "_post", return_value=browse_data) as mock_post:
             srv.browse_remote("gdrive", "Documents/Work")
 
         mock_post.assert_called_once_with(
-            "/api/wizard/browse", {"remote": "gdrive", "path": "Documents/Work"}
+            "/api/wizard/browse", {"path": "gdrive:Documents/Work"}
         )
 
     def test_empty_path_browses_root(self):
-        """path='' browses root."""
+        """path='' browses remote root with trailing colon."""
         import cloudhop_mcp.server as srv
 
-        with patch.object(srv, "_post", return_value={"entries": []}) as mock_post:
+        remotes_data = {"remotes": ["onedrive"]}
+        with (
+            patch.object(
+                srv, "_post", return_value={"ok": True, "folders": []}
+            ) as mock_post,
+            patch.object(srv, "_get", return_value=remotes_data),
+        ):
             srv.browse_remote("onedrive", "")
 
-        mock_post.assert_called_once_with(
-            "/api/wizard/browse", {"remote": "onedrive", "path": ""}
-        )
+        mock_post.assert_called_once_with("/api/wizard/browse", {"path": "onedrive:"})
 
-    def test_returns_entries(self):
-        """Returns parsed entries from API."""
+    def test_returns_folders(self):
+        """Returns parsed folders from API."""
         import cloudhop_mcp.server as srv
 
-        entries = [
-            {"name": "Photos", "type": "dir"},
-            {"name": "doc.pdf", "type": "file", "size": 1024},
+        folders = [
+            {"name": "Photos", "path": "Photos"},
+            {"name": "Documents", "path": "Documents"},
         ]
-        with patch.object(srv, "_post", return_value={"entries": entries}):
+        with patch.object(srv, "_post", return_value={"ok": True, "folders": folders}):
             result = json.loads(srv.browse_remote("gdrive", ""))
 
-        assert len(result["entries"]) == 2
-        assert result["entries"][0]["name"] == "Photos"
+        assert len(result["folders"]) == 2
+        assert result["folders"][0]["name"] == "Photos"
+
+    def test_invalid_remote_returns_error(self):
+        """FM-07: browse_remote returns error for non-existent remotes."""
+        import cloudhop_mcp.server as srv
+
+        remotes_data = {"remotes": ["gdrive", "onedrive"]}
+        with (
+            patch.object(srv, "_post", return_value={"ok": True, "folders": []}),
+            patch.object(srv, "_get", return_value=remotes_data),
+        ):
+            result = json.loads(srv.browse_remote("fakeremote999", ""))
+
+        assert result["ok"] is False
+        assert "not found" in result["error"].lower()
 
 
 class TestPreviewTransfer:
@@ -366,11 +385,17 @@ class TestPreviewTransfer:
 class TestStartTransfer:
     """Tests for start_transfer tool."""
 
+    def _remotes(self, *names):
+        return {"remotes": list(names)}
+
     def test_valid_copy_mode(self):
         """mode='copy' is accepted."""
         import cloudhop_mcp.server as srv
 
-        with patch.object(srv, "_post", return_value={"ok": True}) as mock_post:
+        with (
+            patch.object(srv, "_get", return_value=self._remotes("dst")),
+            patch.object(srv, "_post", return_value={"ok": True}) as mock_post,
+        ):
             result = json.loads(srv.start_transfer("src:", "dst:", mode="copy"))
 
         assert result["ok"] is True
@@ -381,7 +406,10 @@ class TestStartTransfer:
         """mode='sync' is accepted."""
         import cloudhop_mcp.server as srv
 
-        with patch.object(srv, "_post", return_value={"ok": True}) as mock_post:
+        with (
+            patch.object(srv, "_get", return_value=self._remotes("dst")),
+            patch.object(srv, "_post", return_value={"ok": True}) as mock_post,
+        ):
             srv.start_transfer("src:", "dst:", mode="sync")
 
         data = mock_post.call_args[0][1]
@@ -402,7 +430,10 @@ class TestStartTransfer:
         """'a,b,c' becomes ['a', 'b', 'c']."""
         import cloudhop_mcp.server as srv
 
-        with patch.object(srv, "_post", return_value={"ok": True}) as mock_post:
+        with (
+            patch.object(srv, "_get", return_value=self._remotes("dst")),
+            patch.object(srv, "_post", return_value={"ok": True}) as mock_post,
+        ):
             srv.start_transfer("src:", "dst:", excludes="node_modules,.git,*.tmp")
 
         data = mock_post.call_args[0][1]
@@ -412,7 +443,10 @@ class TestStartTransfer:
         """Spaces around excludes are stripped."""
         import cloudhop_mcp.server as srv
 
-        with patch.object(srv, "_post", return_value={"ok": True}) as mock_post:
+        with (
+            patch.object(srv, "_get", return_value=self._remotes("dst")),
+            patch.object(srv, "_post", return_value={"ok": True}) as mock_post,
+        ):
             srv.start_transfer("src:", "dst:", excludes=" a , b , c ")
 
         data = mock_post.call_args[0][1]
@@ -422,7 +456,10 @@ class TestStartTransfer:
         """Empty excludes/bw_limit are not included in request."""
         import cloudhop_mcp.server as srv
 
-        with patch.object(srv, "_post", return_value={"ok": True}) as mock_post:
+        with (
+            patch.object(srv, "_get", return_value=self._remotes("dst")),
+            patch.object(srv, "_post", return_value={"ok": True}) as mock_post,
+        ):
             srv.start_transfer("src:", "dst:", excludes="", bw_limit="")
 
         data = mock_post.call_args[0][1]
@@ -433,7 +470,10 @@ class TestStartTransfer:
         """Non-empty bw_limit is included in request."""
         import cloudhop_mcp.server as srv
 
-        with patch.object(srv, "_post", return_value={"ok": True}) as mock_post:
+        with (
+            patch.object(srv, "_get", return_value=self._remotes("dst")),
+            patch.object(srv, "_post", return_value={"ok": True}) as mock_post,
+        ):
             srv.start_transfer("src:", "dst:", bw_limit="10M")
 
         data = mock_post.call_args[0][1]
@@ -443,7 +483,10 @@ class TestStartTransfer:
         """checksum=False (default) does not include checksum in request."""
         import cloudhop_mcp.server as srv
 
-        with patch.object(srv, "_post", return_value={"ok": True}) as mock_post:
+        with (
+            patch.object(srv, "_get", return_value=self._remotes("dst")),
+            patch.object(srv, "_post", return_value={"ok": True}) as mock_post,
+        ):
             srv.start_transfer("src:", "dst:", checksum=False)
 
         data = mock_post.call_args[0][1]
@@ -453,7 +496,10 @@ class TestStartTransfer:
         """checksum=True includes checksum in request."""
         import cloudhop_mcp.server as srv
 
-        with patch.object(srv, "_post", return_value={"ok": True}) as mock_post:
+        with (
+            patch.object(srv, "_get", return_value=self._remotes("dst")),
+            patch.object(srv, "_post", return_value={"ok": True}) as mock_post,
+        ):
             srv.start_transfer("src:", "dst:", checksum=True)
 
         data = mock_post.call_args[0][1]
@@ -463,7 +509,10 @@ class TestStartTransfer:
         """Default transfers value is 8."""
         import cloudhop_mcp.server as srv
 
-        with patch.object(srv, "_post", return_value={"ok": True}) as mock_post:
+        with (
+            patch.object(srv, "_get", return_value=self._remotes("dst")),
+            patch.object(srv, "_post", return_value={"ok": True}) as mock_post,
+        ):
             srv.start_transfer("src:", "dst:")
 
         data = mock_post.call_args[0][1]
@@ -473,7 +522,10 @@ class TestStartTransfer:
         """Custom transfers value is passed through."""
         import cloudhop_mcp.server as srv
 
-        with patch.object(srv, "_post", return_value={"ok": True}) as mock_post:
+        with (
+            patch.object(srv, "_get", return_value=self._remotes("dst")),
+            patch.object(srv, "_post", return_value={"ok": True}) as mock_post,
+        ):
             srv.start_transfer("src:", "dst:", transfers=32)
 
         data = mock_post.call_args[0][1]
@@ -483,10 +535,63 @@ class TestStartTransfer:
         """start_transfer posts to /api/wizard/start."""
         import cloudhop_mcp.server as srv
 
-        with patch.object(srv, "_post", return_value={"ok": True}) as mock_post:
+        with (
+            patch.object(srv, "_get", return_value=self._remotes("dst")),
+            patch.object(srv, "_post", return_value={"ok": True}) as mock_post,
+        ):
             srv.start_transfer("src:", "dst:")
 
         assert mock_post.call_args[0][0] == "/api/wizard/start"
+
+    def test_dry_run_sent_when_true(self):
+        """FM-11: dry_run=True includes dry_run in request."""
+        import cloudhop_mcp.server as srv
+
+        with (
+            patch.object(srv, "_get", return_value=self._remotes("dst")),
+            patch.object(srv, "_post", return_value={"ok": True}) as mock_post,
+        ):
+            srv.start_transfer("src:", "dst:", dry_run=True)
+
+        data = mock_post.call_args[0][1]
+        assert data["dry_run"] is True
+
+    def test_dry_run_not_sent_when_false(self):
+        """dry_run=False (default) does not include dry_run in request."""
+        import cloudhop_mcp.server as srv
+
+        with (
+            patch.object(srv, "_get", return_value=self._remotes("dst")),
+            patch.object(srv, "_post", return_value={"ok": True}) as mock_post,
+        ):
+            srv.start_transfer("src:", "dst:", dry_run=False)
+
+        data = mock_post.call_args[0][1]
+        assert "dry_run" not in data
+
+    def test_invalid_remote_rejected(self):
+        """FM-06: start_transfer rejects unknown remote."""
+        import cloudhop_mcp.server as srv
+
+        with patch.object(
+            srv, "_get", return_value=self._remotes("gdrive", "onedrive")
+        ):
+            result = json.loads(srv.start_transfer("src:", "fakeremote:", mode="copy"))
+
+        assert result["ok"] is False
+        assert "not found" in result["error"].lower()
+
+    def test_local_source_not_found(self):
+        """FM-06: start_transfer rejects non-existent local source."""
+        import cloudhop_mcp.server as srv
+
+        with patch.object(srv, "_get", return_value=self._remotes("dst")):
+            result = json.loads(
+                srv.start_transfer("/nonexistent/path/xyz", "dst:", mode="copy")
+            )
+
+        assert result["ok"] is False
+        assert "does not exist" in result["error"].lower()
 
 
 class TestTransferStatus:
@@ -496,7 +601,7 @@ class TestTransferStatus:
         """Returns status dict."""
         import cloudhop_mcp.server as srv
 
-        status_data = {"status": "Transferring", "pct": 45, "speed": "10MB/s"}
+        status_data = {"rclone_running": True, "pct": 45, "speed": "10MB/s"}
         with patch.object(srv, "_get", return_value=status_data):
             result = json.loads(srv.transfer_status())
 
@@ -504,22 +609,13 @@ class TestTransferStatus:
         assert result["speed"] == "10MB/s"
 
     def test_suggested_action_complete(self):
-        """Status 'Complete' -> suggested_action contains 'complete'."""
+        """finished=True, rclone_running=False -> complete."""
         import cloudhop_mcp.server as srv
 
         with patch.object(
-            srv, "_get", return_value={"status": "Complete", "pct": 100}
-        ):
-            result = json.loads(srv.transfer_status())
-
-        assert "complete" in result["suggested_action"].lower()
-
-    def test_suggested_action_completed(self):
-        """Status 'Completed' also triggers complete action."""
-        import cloudhop_mcp.server as srv
-
-        with patch.object(
-            srv, "_get", return_value={"status": "Completed", "pct": 100}
+            srv,
+            "_get",
+            return_value={"finished": True, "rclone_running": False, "pct": 100},
         ):
             result = json.loads(srv.transfer_status())
 
@@ -532,36 +628,47 @@ class TestTransferStatus:
         with patch.object(
             srv,
             "_get",
-            return_value={"status": "Transferring", "errors": 3, "pct": 50},
+            return_value={
+                "finished": False,
+                "rclone_running": True,
+                "errors": 3,
+                "pct": 50,
+            },
         ):
             result = json.loads(srv.transfer_status())
 
         assert "error" in result["suggested_action"].lower()
 
     def test_suggested_action_paused(self):
-        """Status 'Stopped' -> suggested_action mentions paused."""
+        """not running, not finished, pct > 0 -> paused."""
         import cloudhop_mcp.server as srv
 
-        with patch.object(srv, "_get", return_value={"status": "Stopped", "pct": 30}):
-            result = json.loads(srv.transfer_status())
-
-        assert "paused" in result["suggested_action"].lower()
-
-    def test_suggested_action_paused_status(self):
-        """Status 'Paused' -> suggested_action mentions paused."""
-        import cloudhop_mcp.server as srv
-
-        with patch.object(srv, "_get", return_value={"status": "Paused", "pct": 30}):
+        with patch.object(
+            srv,
+            "_get",
+            return_value={
+                "finished": False,
+                "rclone_running": False,
+                "pct": 30,
+            },
+        ):
             result = json.loads(srv.transfer_status())
 
         assert "paused" in result["suggested_action"].lower()
 
     def test_suggested_action_in_progress(self):
-        """pct > 0 with Transferring -> suggested_action mentions progress."""
+        """rclone_running=True -> in progress."""
         import cloudhop_mcp.server as srv
 
         with patch.object(
-            srv, "_get", return_value={"status": "Transferring", "pct": 25, "errors": 0}
+            srv,
+            "_get",
+            return_value={
+                "finished": False,
+                "rclone_running": True,
+                "errors": 0,
+                "pct": 25,
+            },
         ):
             result = json.loads(srv.transfer_status())
 
@@ -571,7 +678,15 @@ class TestTransferStatus:
         """No active transfer -> 'idle'."""
         import cloudhop_mcp.server as srv
 
-        with patch.object(srv, "_get", return_value={"status": "", "pct": 0}):
+        with patch.object(
+            srv,
+            "_get",
+            return_value={
+                "finished": False,
+                "rclone_running": False,
+                "pct": 0,
+            },
+        ):
             result = json.loads(srv.transfer_status())
 
         assert "idle" in result["suggested_action"].lower()
@@ -594,7 +709,12 @@ class TestTransferStatus:
         with patch.object(
             srv,
             "_get",
-            return_value={"status": "Transferring", "errors": 5, "pct": 50},
+            return_value={
+                "finished": False,
+                "rclone_running": True,
+                "errors": 5,
+                "pct": 50,
+            },
         ):
             result = json.loads(srv.transfer_status())
 
@@ -619,14 +739,40 @@ class TestResumeTransfer:
     """Tests for resume_transfer tool."""
 
     def test_calls_resume_endpoint(self):
-        """resume_transfer posts to /api/resume."""
+        """resume_transfer posts to /api/resume when transfer is paused."""
         import cloudhop_mcp.server as srv
 
-        with patch.object(srv, "_post", return_value={"ok": True}) as mock_post:
+        paused_status = {"rclone_running": False, "finished": True, "pct": 50}
+        with (
+            patch.object(srv, "_get", return_value=paused_status),
+            patch.object(srv, "_post", return_value={"ok": True}) as mock_post,
+        ):
             result = json.loads(srv.resume_transfer())
 
         mock_post.assert_called_once_with("/api/resume")
         assert result["ok"] is True
+
+    def test_blocks_resume_when_running(self):
+        """FM-08: resume returns error when transfer is already running."""
+        import cloudhop_mcp.server as srv
+
+        running_status = {"rclone_running": True, "finished": False, "pct": 50}
+        with patch.object(srv, "_get", return_value=running_status):
+            result = json.loads(srv.resume_transfer())
+
+        assert result["ok"] is False
+        assert "already running" in result["error"].lower()
+
+    def test_blocks_resume_when_completed(self):
+        """FM-08: resume returns error when transfer is completed."""
+        import cloudhop_mcp.server as srv
+
+        completed_status = {"rclone_running": False, "finished": True, "pct": 100}
+        with patch.object(srv, "_get", return_value=completed_status):
+            result = json.loads(srv.resume_transfer())
+
+        assert result["ok"] is False
+        assert "no paused transfer" in result["error"].lower()
 
 
 class TestStopTransfer:
@@ -695,29 +841,48 @@ class TestErrorLog:
 class TestTransferHistory:
     """Tests for transfer_history tool."""
 
-    def test_calls_history_endpoint(self):
-        """transfer_history gets /api/history."""
+    def test_handles_list_response(self):
+        """FM-03: transfer_history handles list response from API."""
         import cloudhop_mcp.server as srv
 
-        history_data = {
-            "entries": [
-                {"source": "gdrive:", "dest": "onedrive:", "status": "Complete"}
-            ]
-        }
-        with patch.object(srv, "_get", return_value=history_data) as mock_get:
+        history_list = [{"id": "abc123", "label": "Transfer", "sessions": 1}]
+        with patch.object(srv, "_get", return_value=history_list) as mock_get:
             result = json.loads(srv.transfer_history())
 
         mock_get.assert_called_once_with("/api/history")
-        assert len(result["entries"]) == 1
+        assert isinstance(result, list)
+        assert len(result) == 1
 
-    def test_returns_empty_history(self):
-        """Empty history returns empty entries."""
+    def test_handles_dict_response(self):
+        """transfer_history handles dict response with history key."""
         import cloudhop_mcp.server as srv
 
-        with patch.object(srv, "_get", return_value={"entries": []}):
+        history_data = {"history": [{"id": "abc123", "label": "Transfer"}]}
+        with patch.object(srv, "_get", return_value=history_data):
             result = json.loads(srv.transfer_history())
 
-        assert result["entries"] == []
+        assert isinstance(result, list)
+        assert len(result) == 1
+
+    def test_returns_empty_history(self):
+        """Empty history returns empty list."""
+        import cloudhop_mcp.server as srv
+
+        with patch.object(srv, "_get", return_value=[]):
+            result = json.loads(srv.transfer_history())
+
+        assert result == []
+
+    def test_handles_error_response(self):
+        """Error response is passed through."""
+        import cloudhop_mcp.server as srv
+
+        with patch.object(
+            srv, "_get", return_value={"ok": False, "error": "not running"}
+        ):
+            result = json.loads(srv.transfer_history())
+
+        assert result["ok"] is False
 
 
 class TestServerHealth:
@@ -873,21 +1038,23 @@ class TestEdgeCases:
         """Path with spaces and diacritics is passed through."""
         import cloudhop_mcp.server as srv
 
-        with patch.object(srv, "_post", return_value={"entries": []}) as mock_post:
+        with patch.object(
+            srv, "_post", return_value={"ok": True, "folders": [{"name": "f"}]}
+        ) as mock_post:
             srv.browse_remote("gdrive", "My Folder/Documente și fișiere")
 
         data = mock_post.call_args[0][1]
-        assert data["path"] == "My Folder/Documente și fișiere"
+        assert data["path"] == "gdrive:My Folder/Documente și fișiere"
 
     def test_start_transfer_empty_source(self):
-        """Empty source is sent to API (server validates)."""
+        """FM-06: Empty local source returns validation error."""
         import cloudhop_mcp.server as srv
 
-        with patch.object(srv, "_post", return_value={"ok": True}) as mock_post:
-            srv.start_transfer("", "dst:")
+        with patch.object(srv, "_get", return_value={"remotes": ["dst"]}):
+            result = json.loads(srv.start_transfer("", "dst:"))
 
-        data = mock_post.call_args[0][1]
-        assert data["source"] == ""
+        assert result["ok"] is False
+        assert "does not exist" in result["error"].lower()
 
     def test_start_transfer_empty_dest(self):
         """Empty dest is sent to API (server validates)."""
@@ -913,17 +1080,22 @@ class TestEdgeCases:
         import cloudhop_mcp.server as srv
 
         long_path = "a" * 600
-        with patch.object(srv, "_post", return_value={"entries": []}) as mock_post:
+        with patch.object(
+            srv, "_post", return_value={"ok": True, "folders": [{"name": "f"}]}
+        ) as mock_post:
             srv.browse_remote("gdrive", long_path)
 
         data = mock_post.call_args[0][1]
-        assert len(data["path"]) == 600
+        assert data["path"] == f"gdrive:{long_path}"
 
     def test_start_transfer_all_params(self):
         """All optional params set at once."""
         import cloudhop_mcp.server as srv
 
-        with patch.object(srv, "_post", return_value={"ok": True}) as mock_post:
+        with (
+            patch.object(srv, "_get", return_value={"remotes": ["onedrive"]}),
+            patch.object(srv, "_post", return_value={"ok": True}) as mock_post,
+        ):
             srv.start_transfer(
                 source="gdrive:Photos",
                 dest="onedrive:Backup",
@@ -932,6 +1104,7 @@ class TestEdgeCases:
                 bw_limit="50M",
                 checksum=True,
                 mode="sync",
+                dry_run=True,
             )
 
         data = mock_post.call_args[0][1]
@@ -942,6 +1115,7 @@ class TestEdgeCases:
         assert data["bw_limit"] == "50M"
         assert data["checksum"] is True
         assert data["mode"] == "sync"
+        assert data["dry_run"] is True
 
     def test_fmt_handles_nested_data(self):
         """_fmt handles nested dicts and lists."""
@@ -1018,10 +1192,6 @@ class TestConfiguration:
 
         assert "pip install cloudhop" in srv._NOT_RUNNING
         assert "cloudhop" in srv._NOT_RUNNING
-
-
-# Need os import for TestConfiguration
-import os
 
 
 # ---------------------------------------------------------------------------
