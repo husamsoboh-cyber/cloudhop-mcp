@@ -31,5 +31,5 @@ cloudhop-mcp = "cloudhop_mcp.server:main"
 testpaths = ["cloudhop_mcp/tests"]
 
 [project.urls]
-Homepage = "https://github.com/husamsoboh-cyber/cloudhop-mcp"
-Issues = "https://github.com/husamsoboh-cyber/cloudhop-mcp/issues"
+Homepage = "https://github.com/ozymandiashh/cloudhop-mcp"
+Issues = "https://github.com/ozymandiashh/cloudhop-mcp/issues"

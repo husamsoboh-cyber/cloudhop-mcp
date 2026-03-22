@@ -4,7 +4,7 @@
 
 # CloudHop MCP Server
 
-An [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server that connects Claude to [CloudHop](https://github.com/husamsoboh-cyber/cloudhop), letting you control cloud file transfers through natural language.
+An [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server that connects Claude to [CloudHop](https://github.com/ozymandiashh/cloudhop), letting you control cloud file transfers through natural language.
 
 Instead of clicking through a wizard, you just tell Claude what to move and where.
 
@@ -210,7 +210,7 @@ Usage: "Use the migrate prompt to sync my Dropbox to OneDrive"
    brew install cloudhop   # Homebrew (macOS)
    ```
 
-   Or download from [CloudHop Releases](https://github.com/husamsoboh-cyber/cloudhop/releases).
+   Or download from [CloudHop Releases](https://github.com/ozymandiashh/cloudhop/releases).
 
 2. **Python 3.10+** (the MCP SDK requires it).
 
@@ -227,7 +227,7 @@ pip install cloudhop-mcp
 ### From source
 
 ```bash
-git clone https://github.com/husamsoboh-cyber/cloudhop-mcp
+git clone https://github.com/ozymandiashh/cloudhop-mcp
 cd cloudhop-mcp
 pip install -e .
 ```
@@ -365,7 +365,7 @@ lsof -i :8787
 
 ## Links
 
-- [CloudHop](https://github.com/husamsoboh-cyber/cloudhop) - the main application
+- [CloudHop](https://github.com/ozymandiashh/cloudhop) - the main application
 - [MCP Documentation](https://modelcontextprotocol.io/) - Model Context Protocol specification
 - [rclone](https://rclone.org/) - the file transfer engine CloudHop uses
 
