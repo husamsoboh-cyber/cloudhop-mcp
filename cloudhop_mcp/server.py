@@ -198,7 +198,23 @@ def browse_remote(remote: str, path: str = "") -> str:
         remote: Remote name, e.g. "onedrive" or "gdrive"
         path: Folder path within the remote (empty for root)
     """
-    return _fmt(_post("/api/wizard/browse", {"remote": remote, "path": path}))
+    full_path = f"{remote}:{path}" if path else f"{remote}:"
+    resp = _post("/api/wizard/browse", {"path": full_path})
+    if isinstance(resp, dict) and not resp.get("ok", True):
+        return _fmt(resp)
+    # FM-07: Return error for invalid remote names
+    folders = resp.get("folders", [])
+    if not folders:
+        remotes_resp = _get("/api/wizard/status")
+        available = remotes_resp.get("remotes", [])
+        if remote not in available:
+            return _fmt(
+                {
+                    "ok": False,
+                    "error": f"Remote '{remote}' not found. Available: {', '.join(available)}",
+                }
+            )
+    return _fmt(resp)
 
 
 @mcp.tool()
@@ -223,6 +239,7 @@ def start_transfer(
     bw_limit: str = "",
     checksum: bool = False,
     mode: str = "copy",
+    dry_run: bool = False,
 ) -> str:
     """Start a file transfer between two cloud storage locations.
 
@@ -243,11 +260,27 @@ def start_transfer(
         bw_limit: Bandwidth limit, e.g. "10M" or "1G" (empty = unlimited)
         checksum: Verify files with checksums after transfer
         mode: "copy" (add new/changed files) or "sync" (mirror source, deletes extras)
+        dry_run: If True, simulate the transfer without actually copying files
     """
     if mode not in ("copy", "sync"):
         return _fmt(
             {"ok": False, "error": f"Invalid mode '{mode}'. Use 'copy' or 'sync'."}
         )
+    # FM-06: Pre-validate remote existence
+    remote_name = dest.split(":")[0] if ":" in dest else ""
+    if remote_name:
+        remotes_resp = _get("/api/wizard/status")
+        available = remotes_resp.get("remotes", [])
+        if remote_name not in available:
+            return _fmt(
+                {
+                    "ok": False,
+                    "error": f"Remote '{remote_name}' not found. Available: {', '.join(available)}",
+                }
+            )
+    # FM-06: Validate local source exists
+    if ":" not in source and not os.path.exists(source):
+        return _fmt({"ok": False, "error": f"Source path does not exist: {source}"})
     data: dict = {
         "source": source,
         "dest": dest,
@@ -260,6 +293,8 @@ def start_transfer(
         data["bw_limit"] = bw_limit
     if checksum:
         data["checksum"] = True
+    if dry_run:
+        data["dry_run"] = True
     return _fmt(_post("/api/wizard/start", data))
 
 
@@ -273,19 +308,20 @@ def transfer_status() -> str:
     resp = _get("/api/status")
 
     if "error" not in resp:
-        status = resp.get("status", "")
+        finished = resp.get("finished", False)
+        running = resp.get("rclone_running", False)
         errors = resp.get("errors", 0)
         pct = resp.get("pct", 0)
 
-        if status in ("Complete", "Completed"):
+        if finished and not running:
             resp["suggested_action"] = "transfer_complete - inform user of final stats"
-        elif errors and errors > 0:
+        elif errors and int(errors) > 0:
             resp["suggested_action"] = "has_errors - call error_log() to investigate"
-        elif status in ("Stopped", "Paused"):
+        elif not running and not finished and pct and float(pct) > 0:
             resp["suggested_action"] = (
                 "paused - ask user if they want to resume or cancel"
             )
-        elif status == "Transferring" or (pct and pct > 0):
+        elif running:
             resp["suggested_action"] = "in_progress - wait 10-15s then poll again"
         else:
             resp["suggested_action"] = "idle - no active transfer"
@@ -306,6 +342,18 @@ def pause_transfer() -> str:
 @mcp.tool()
 def resume_transfer() -> str:
     """Resume a paused transfer. Only works when a transfer has been paused."""
+    status = _get("/api/status")
+    if isinstance(status, dict) and "error" not in status:
+        running = status.get("rclone_running", False)
+        if running:
+            return _fmt({"ok": False, "error": "Transfer is already running"})
+        pct = status.get("pct", 0)
+        try:
+            pct_val = float(pct) if pct else 0
+        except (ValueError, TypeError):
+            pct_val = 0
+        if pct_val >= 100:
+            return _fmt({"ok": False, "error": "No paused transfer to resume"})
     return _fmt(_post("/api/resume"))
 
 
@@ -352,7 +400,14 @@ def error_log() -> str:
 @mcp.tool()
 def transfer_history() -> str:
     """View past transfer history with details of previous runs."""
-    return _fmt(_get("/api/history"))
+    resp = _get("/api/history")
+    if isinstance(resp, dict) and "error" in resp:
+        return _fmt(resp)
+    if isinstance(resp, list):
+        history = resp
+    else:
+        history = resp.get("history", [])
+    return _fmt(history)
 
 
 # ---------------------------------------------------------------------------
