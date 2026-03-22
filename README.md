@@ -47,11 +47,11 @@ Claude: 45% complete - 5.6 GB transferred at 23 MB/s. ETA ~5 minutes.
   Currently transferring: Photos/vacation-2024/IMG_4521.jpg
 
 You: slow it down to 10 megabytes per second
-Claude: I can't change bandwidth on a running transfer, but you can
-  pause and restart with a limit. Want me to do that?
+Claude: Done - bandwidth limited to 10 MB/s. Transfer continues at reduced speed.
 
-You: yeah do it
-Claude: Paused. Restarting with 10M bandwidth limit... Transfer resumed.
+You: actually stop it completely
+Claude: Transfer cancelled. 5.6 GB of 12.3 GB were transferred.
+  You can resume later from where it stopped, or start fresh.
 
 You: show me my transfer history
 Claude: You have 3 past transfers:
@@ -62,7 +62,7 @@ Claude: You have 3 past transfers:
 
 ## Available tools
 
-The MCP server exposes 8 tools that Claude can call:
+The MCP server exposes 13 tools that Claude can call:
 
 ### list_remotes
 
@@ -137,6 +137,69 @@ Resume a previously paused transfer.
 View all past transfers with their details (source, destination, file count, size).
 
 ---
+
+### server_health
+
+Check if CloudHop is running and ready. Call this first before any other tool.
+
+**Returns:** rclone version, server status.
+
+---
+
+### stop_transfer
+
+Permanently cancel the current transfer. Use this when the user wants to abort completely. For temporary pauses (user wants to resume later), use `pause_transfer` instead.
+
+---
+
+### change_speed
+
+Change bandwidth limit on a running transfer.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `limit` | string | yes | Speed limit: `"5M"`, `"500K"`, `"1G"`, `"0"` for unlimited |
+
+---
+
+### verify_transfer
+
+Verify integrity of a completed transfer by comparing source and destination checksums. Only works after a transfer has finished.
+
+---
+
+### error_log
+
+View error log for the current or most recent transfer. Call this when `transfer_status` shows errors > 0.
+
+---
+
+## Resources
+
+MCP resources provide read-only data that Claude can access automatically.
+
+### cloudhop://remotes
+Currently configured cloud storage accounts. Same data as `list_remotes()` but available as a resource.
+
+### cloudhop://status
+Current transfer status if any transfer is active.
+
+### cloudhop://instructions
+Usage guide that helps Claude use the tools effectively. Includes recommended workflow, rules (e.g. always preview before transfer), and formatting guidelines.
+
+## Prompts
+
+MCP prompts provide guided workflows for common tasks.
+
+### backup
+Guided backup workflow: health check, preview, confirm, transfer, verify.
+
+Usage: "Use the backup prompt to copy my OneDrive photos to Google Drive"
+
+### migrate
+Guided migration with sync mode, including explicit deletion warnings.
+
+Usage: "Use the migrate prompt to sync my Dropbox to OneDrive"
 
 ## Prerequisites
 
