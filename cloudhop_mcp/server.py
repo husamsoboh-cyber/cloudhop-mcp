@@ -69,7 +69,7 @@ def _reset_csrf() -> None:
     _csrf_token = None
 
 
-def _get(path: str, timeout: int = 10) -> dict:
+def _get(path: str, timeout: int = 10) -> dict | list:
     try:
         req = urllib.request.Request(f"{BASE}{path}", headers={"Host": _host()})
         with _opener.open(req, timeout=timeout) as r:
@@ -198,7 +198,7 @@ def browse_remote(remote: str, path: str = "") -> str:
         remote: Remote name, e.g. "onedrive" or "gdrive"
         path: Folder path within the remote (empty for root)
     """
-    full_path = f"{remote}:{path}" if path else f"{remote}:"
+    full_path = f"{remote}:{path}" if path else f"{remote}:/"
     resp = _post("/api/wizard/browse", {"path": full_path})
     if isinstance(resp, dict) and not resp.get("ok", True):
         return _fmt(resp)
@@ -266,18 +266,24 @@ def start_transfer(
         return _fmt(
             {"ok": False, "error": f"Invalid mode '{mode}'. Use 'copy' or 'sync'."}
         )
-    # FM-06: Pre-validate remote existence
-    remote_name = dest.split(":")[0] if ":" in dest else ""
-    if remote_name:
-        remotes_resp = _get("/api/wizard/status")
-        available = remotes_resp.get("remotes", [])
-        if remote_name not in available:
-            return _fmt(
-                {
-                    "ok": False,
-                    "error": f"Remote '{remote_name}' not found. Available: {', '.join(available)}",
-                }
-            )
+    # FM-06: Pre-validate remote existence for dest and source
+    remotes_resp = _get("/api/wizard/status")
+    available = (
+        remotes_resp.get("remotes", []) if isinstance(remotes_resp, dict) else []
+    )
+    for label, path_val in [("Destination", dest), ("Source", source)]:
+        remote_name = path_val.split(":")[0] if ":" in path_val else ""
+        if remote_name and available is not None:
+            if remote_name not in available:
+                return _fmt(
+                    {
+                        "ok": False,
+                        "error": (
+                            f"{label} remote '{remote_name}' not found. "
+                            f"Available: {', '.join(available)}"
+                        ),
+                    }
+                )
     # FM-06: Validate local source exists
     if ":" not in source and not os.path.exists(source):
         return _fmt({"ok": False, "error": f"Source path does not exist: {source}"})
@@ -307,7 +313,9 @@ def transfer_status() -> str:
     """
     resp = _get("/api/status")
 
-    if "error" not in resp:
+    # Only add suggested_action when we got a real status response,
+    # not an error from _get (connection refused, etc.)
+    if isinstance(resp, dict) and not (resp.get("ok") is False and "error" in resp):
         finished = resp.get("finished", False)
         running = resp.get("rclone_running", False)
         errors = resp.get("errors", 0)
@@ -401,13 +409,15 @@ def error_log() -> str:
 def transfer_history() -> str:
     """View past transfer history with details of previous runs."""
     resp = _get("/api/history")
-    if isinstance(resp, dict) and "error" in resp:
-        return _fmt(resp)
+    # API returns a bare list; _get may also return an error dict
     if isinstance(resp, list):
-        history = resp
-    else:
-        history = resp.get("history", [])
-    return _fmt(history)
+        return _fmt(resp)
+    if isinstance(resp, dict):
+        if resp.get("ok") is False or "error" in resp:
+            return _fmt(resp)
+        return _fmt(resp.get("history", []))
+    # Unexpected type -- return as-is
+    return _fmt(resp)
 
 
 # ---------------------------------------------------------------------------

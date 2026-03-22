@@ -313,7 +313,7 @@ class TestBrowseRemote:
         )
 
     def test_empty_path_browses_root(self):
-        """path='' browses remote root with trailing colon."""
+        """path='' browses remote root with trailing slash."""
         import cloudhop_mcp.server as srv
 
         remotes_data = {"remotes": ["onedrive"]}
@@ -325,7 +325,7 @@ class TestBrowseRemote:
         ):
             srv.browse_remote("onedrive", "")
 
-        mock_post.assert_called_once_with("/api/wizard/browse", {"path": "onedrive:"})
+        mock_post.assert_called_once_with("/api/wizard/browse", {"path": "onedrive:/"})
 
     def test_returns_folders(self):
         """Returns parsed folders from API."""
@@ -393,7 +393,7 @@ class TestStartTransfer:
         import cloudhop_mcp.server as srv
 
         with (
-            patch.object(srv, "_get", return_value=self._remotes("dst")),
+            patch.object(srv, "_get", return_value=self._remotes("src", "dst")),
             patch.object(srv, "_post", return_value={"ok": True}) as mock_post,
         ):
             result = json.loads(srv.start_transfer("src:", "dst:", mode="copy"))
@@ -407,7 +407,7 @@ class TestStartTransfer:
         import cloudhop_mcp.server as srv
 
         with (
-            patch.object(srv, "_get", return_value=self._remotes("dst")),
+            patch.object(srv, "_get", return_value=self._remotes("src", "dst")),
             patch.object(srv, "_post", return_value={"ok": True}) as mock_post,
         ):
             srv.start_transfer("src:", "dst:", mode="sync")
@@ -431,7 +431,7 @@ class TestStartTransfer:
         import cloudhop_mcp.server as srv
 
         with (
-            patch.object(srv, "_get", return_value=self._remotes("dst")),
+            patch.object(srv, "_get", return_value=self._remotes("src", "dst")),
             patch.object(srv, "_post", return_value={"ok": True}) as mock_post,
         ):
             srv.start_transfer("src:", "dst:", excludes="node_modules,.git,*.tmp")
@@ -444,7 +444,7 @@ class TestStartTransfer:
         import cloudhop_mcp.server as srv
 
         with (
-            patch.object(srv, "_get", return_value=self._remotes("dst")),
+            patch.object(srv, "_get", return_value=self._remotes("src", "dst")),
             patch.object(srv, "_post", return_value={"ok": True}) as mock_post,
         ):
             srv.start_transfer("src:", "dst:", excludes=" a , b , c ")
@@ -457,7 +457,7 @@ class TestStartTransfer:
         import cloudhop_mcp.server as srv
 
         with (
-            patch.object(srv, "_get", return_value=self._remotes("dst")),
+            patch.object(srv, "_get", return_value=self._remotes("src", "dst")),
             patch.object(srv, "_post", return_value={"ok": True}) as mock_post,
         ):
             srv.start_transfer("src:", "dst:", excludes="", bw_limit="")
@@ -471,7 +471,7 @@ class TestStartTransfer:
         import cloudhop_mcp.server as srv
 
         with (
-            patch.object(srv, "_get", return_value=self._remotes("dst")),
+            patch.object(srv, "_get", return_value=self._remotes("src", "dst")),
             patch.object(srv, "_post", return_value={"ok": True}) as mock_post,
         ):
             srv.start_transfer("src:", "dst:", bw_limit="10M")
@@ -484,7 +484,7 @@ class TestStartTransfer:
         import cloudhop_mcp.server as srv
 
         with (
-            patch.object(srv, "_get", return_value=self._remotes("dst")),
+            patch.object(srv, "_get", return_value=self._remotes("src", "dst")),
             patch.object(srv, "_post", return_value={"ok": True}) as mock_post,
         ):
             srv.start_transfer("src:", "dst:", checksum=False)
@@ -497,7 +497,7 @@ class TestStartTransfer:
         import cloudhop_mcp.server as srv
 
         with (
-            patch.object(srv, "_get", return_value=self._remotes("dst")),
+            patch.object(srv, "_get", return_value=self._remotes("src", "dst")),
             patch.object(srv, "_post", return_value={"ok": True}) as mock_post,
         ):
             srv.start_transfer("src:", "dst:", checksum=True)
@@ -510,7 +510,7 @@ class TestStartTransfer:
         import cloudhop_mcp.server as srv
 
         with (
-            patch.object(srv, "_get", return_value=self._remotes("dst")),
+            patch.object(srv, "_get", return_value=self._remotes("src", "dst")),
             patch.object(srv, "_post", return_value={"ok": True}) as mock_post,
         ):
             srv.start_transfer("src:", "dst:")
@@ -523,7 +523,7 @@ class TestStartTransfer:
         import cloudhop_mcp.server as srv
 
         with (
-            patch.object(srv, "_get", return_value=self._remotes("dst")),
+            patch.object(srv, "_get", return_value=self._remotes("src", "dst")),
             patch.object(srv, "_post", return_value={"ok": True}) as mock_post,
         ):
             srv.start_transfer("src:", "dst:", transfers=32)
@@ -536,7 +536,7 @@ class TestStartTransfer:
         import cloudhop_mcp.server as srv
 
         with (
-            patch.object(srv, "_get", return_value=self._remotes("dst")),
+            patch.object(srv, "_get", return_value=self._remotes("src", "dst")),
             patch.object(srv, "_post", return_value={"ok": True}) as mock_post,
         ):
             srv.start_transfer("src:", "dst:")
@@ -548,7 +548,7 @@ class TestStartTransfer:
         import cloudhop_mcp.server as srv
 
         with (
-            patch.object(srv, "_get", return_value=self._remotes("dst")),
+            patch.object(srv, "_get", return_value=self._remotes("src", "dst")),
             patch.object(srv, "_post", return_value={"ok": True}) as mock_post,
         ):
             srv.start_transfer("src:", "dst:", dry_run=True)
@@ -561,7 +561,7 @@ class TestStartTransfer:
         import cloudhop_mcp.server as srv
 
         with (
-            patch.object(srv, "_get", return_value=self._remotes("dst")),
+            patch.object(srv, "_get", return_value=self._remotes("src", "dst")),
             patch.object(srv, "_post", return_value={"ok": True}) as mock_post,
         ):
             srv.start_transfer("src:", "dst:", dry_run=False)
@@ -569,17 +569,35 @@ class TestStartTransfer:
         data = mock_post.call_args[0][1]
         assert "dry_run" not in data
 
-    def test_invalid_remote_rejected(self):
-        """FM-06: start_transfer rejects unknown remote."""
+    def test_invalid_dest_remote_rejected(self):
+        """FM-06: start_transfer rejects unknown destination remote."""
         import cloudhop_mcp.server as srv
 
         with patch.object(
             srv, "_get", return_value=self._remotes("gdrive", "onedrive")
         ):
-            result = json.loads(srv.start_transfer("src:", "fakeremote:", mode="copy"))
+            result = json.loads(
+                srv.start_transfer("gdrive:", "fakeremote:", mode="copy")
+            )
 
         assert result["ok"] is False
         assert "not found" in result["error"].lower()
+        assert "destination" in result["error"].lower()
+
+    def test_invalid_source_remote_rejected(self):
+        """V904: start_transfer rejects unknown source remote."""
+        import cloudhop_mcp.server as srv
+
+        with patch.object(
+            srv, "_get", return_value=self._remotes("gdrive", "onedrive")
+        ):
+            result = json.loads(
+                srv.start_transfer("fakeremote:test", "gdrive:", mode="copy")
+            )
+
+        assert result["ok"] is False
+        assert "not found" in result["error"].lower()
+        assert "source" in result["error"].lower()
 
     def test_local_source_not_found(self):
         """FM-06: start_transfer rejects non-existent local source."""
@@ -1060,7 +1078,10 @@ class TestEdgeCases:
         """Empty dest is sent to API (server validates)."""
         import cloudhop_mcp.server as srv
 
-        with patch.object(srv, "_post", return_value={"ok": True}) as mock_post:
+        with (
+            patch.object(srv, "_get", return_value={"remotes": ["src"]}),
+            patch.object(srv, "_post", return_value={"ok": True}) as mock_post,
+        ):
             srv.start_transfer("src:", "")
 
         data = mock_post.call_args[0][1]
@@ -1093,7 +1114,7 @@ class TestEdgeCases:
         import cloudhop_mcp.server as srv
 
         with (
-            patch.object(srv, "_get", return_value={"remotes": ["onedrive"]}),
+            patch.object(srv, "_get", return_value={"remotes": ["gdrive", "onedrive"]}),
             patch.object(srv, "_post", return_value={"ok": True}) as mock_post,
         ):
             srv.start_transfer(
